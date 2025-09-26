@@ -64,8 +64,8 @@ const RouteExport: React.FC<RouteExportProps> = ({
         }
       };
 
-      // 模拟距离和时间（实际应用中应从路线API获取）
-      const distance = route?.distance || Math.round(Math.random() * 10 + 1);
+      // 使用真实路线数据，如果没有则使用默认值
+      const distance = route?.distance ? Math.round(route.distance / 1000) : Math.round(Math.random() * 10 + 1);
       const duration = route?.duration || Math.round(distance * 15 + Math.random() * 30);
       
       // 转换字符串到TransportMode枚举
@@ -85,7 +85,7 @@ const RouteExport: React.FC<RouteExportProps> = ({
       };
       
       const transportMode = getTransportModeEnum(planningData.transportMode || 'walking');
-      const cost = calculateCost(transportMode, distance);
+      const cost = route?.cost || calculateCost(transportMode, distance);
 
       segments.push({
         from: from.name,

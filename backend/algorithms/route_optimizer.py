@@ -188,7 +188,8 @@ class RouteOptimizer:
         return total_distance
     
     def optimize_trip(self, pois: List[Dict], num_days: int, 
-                     daily_time_limit: int = 480) -> Dict[str, Any]:
+                     daily_time_limit: int = 480, transport_mode: str = 'driving',
+                     start_time: str = '09:00', is_weekend: bool = False) -> Dict[str, Any]:
         """
         优化整个行程
         
@@ -241,24 +242,47 @@ class RouteOptimizer:
                 day_distance = 0
                 day_duration = 0
                 
+                # 解析开始时间
+                start_hour = int(start_time.split(':')[0])
+                current_time = start_hour
+                
                 for i in range(len(optimized_pois) - 1):
                     distance = self.calculate_distance(optimized_pois[i], optimized_pois[i + 1])
-                    # 估算行驶时间（假设平均速度30km/h）
-                    travel_time = (distance / 30) * 60  # 分钟
+                    
+                    # 使用改进的时间预估算法
+                    travel_time = self.calculate_time_estimate(
+                        distance_km=distance,
+                        transport_mode=transport_mode,
+                        time_of_day=int(current_time),
+                        is_weekend=is_weekend
+                    )
+                    
+                    # 计算费用
+                    cost = self._calculate_transport_cost(distance, transport_mode)
                     
                     routes.append({
                         'from_poi_id': optimized_pois[i]['id'],
                         'to_poi_id': optimized_pois[i + 1]['id'],
-                        'distance': round(distance, 2),
-                        'duration': round(travel_time, 0),
-                        'mode': 'driving'
+                        'distance': round(distance * 1000, 0),  # 转换为米
+                        'duration': travel_time,
+                        'mode': transport_mode,
+                        'cost': cost
                     })
                     
                     day_distance += distance
                     day_duration += travel_time
+                    
+                    # 更新当前时间（加上旅行时间）
+                    current_time += travel_time / 60
                 
-                # 计算POI游览时间
-                poi_time = sum(poi.get('suggestedDuration', 60) for poi in optimized_pois)
+                # 计算POI游览时间（使用改进的停留时间计算）
+                poi_time = 0
+                poi_current_time = start_hour  # 使用实际开始时间
+                
+                for poi in optimized_pois:
+                    stay_duration = self.calculate_poi_stay_duration(poi, int(poi_current_time))
+                    poi_time += stay_duration
+                    poi_current_time += stay_duration / 60
                 total_day_time = day_duration + poi_time
                 
                 optimized_days.append({
@@ -292,25 +316,134 @@ class RouteOptimizer:
                 'error': f'路线优化失败: {str(e)}'
             }
     
-    def calculate_time_estimate(self, distance_km: float, transport_mode: str = 'driving') -> int:
+    def calculate_time_estimate(self, distance_km: float, transport_mode: str = 'driving', 
+                              time_of_day: int = 12, is_weekend: bool = False) -> int:
         """
-        根据距离和交通方式估算时间
+        根据距离和交通方式估算时间（考虑现实因素）
+        
+        Args:
+            distance_km: 距离（公里）
+            transport_mode: 交通方式
+            time_of_day: 一天中的小时（0-23）
+            is_weekend: 是否为周末
+            
+        Returns:
+            估算时间（分钟）
+        """
+        # 基础速度（km/h）
+        base_speeds = {
+            'driving': 40,    # 城市道路平均速度
+            'walking': 5,     # 步行速度
+            'cycling': 15,    # 骑行速度
+            'transit': 25     # 公共交通平均速度
+        }
+        
+        base_speed = base_speeds.get(transport_mode, 40)
+        
+        # 交通拥堵调整因子
+        if transport_mode == 'driving':
+            # 工作日高峰期调整
+            if not is_weekend:
+                if 7 <= time_of_day <= 9 or 17 <= time_of_day <= 19:
+                    base_speed *= 0.6  # 高峰期速度降低40%
+                elif 9 <= time_of_day <= 17:
+                    base_speed *= 0.8  # 白天略有拥堵
+            else:
+                # 周末调整
+                if 10 <= time_of_day <= 18:
+                    base_speed *= 0.9  # 周末略有拥堵
+        
+        # 公共交通等车时间
+        if transport_mode == 'transit':
+            waiting_time = 8 if not is_weekend else 12  # 分钟
+        else:
+            waiting_time = 0
+        
+        # 计算行驶时间
+        travel_time = (distance_km / base_speed) * 60  # 分钟
+        
+        # 添加额外时间（红绿灯、路口等）
+        if transport_mode in ['driving', 'cycling']:
+            # 每公里增加1-2分钟的额外时间
+            extra_time = distance_km * 1.5
+        else:
+            extra_time = 0
+        
+        total_time = travel_time + waiting_time + extra_time
+        return round(max(total_time, 1))  # 至少1分钟
+    
+    def calculate_poi_stay_duration(self, poi: Dict, time_of_day: int = 12) -> int:
+        """
+        计算景点的建议停留时间（考虑实际因素）
+        
+        Args:
+            poi: POI信息
+            time_of_day: 一天中的小时（0-23）
+            
+        Returns:
+            建议停留时间（分钟）
+        """
+        base_duration = poi.get('suggestedDuration', 60)
+        
+        # 根据景点类型调整
+        category_adjustments = {
+            '博物馆': 1.2,
+            '公园': 1.1,
+            '历史遗迹': 1.0,
+            '商业街': 0.8,
+            '餐厅': 0.7,
+            '观景台': 0.6,
+            '寺庙': 0.8,
+            '广场': 0.7,
+            '建筑': 0.9
+        }
+        
+        category = poi.get('category', '')
+        adjustment = category_adjustments.get(category, 1.0)
+        adjusted_duration = base_duration * adjustment
+        
+        # 根据时间调整（避开用餐时间等）
+        if category == '餐厅':
+            if 11 <= time_of_day <= 13:  # 午餐时间
+                adjusted_duration *= 1.5
+            elif 17 <= time_of_day <= 19:  # 晚餐时间
+                adjusted_duration *= 1.5
+        
+        # 考虑景点开放时间
+        if category in ['博物馆', '寺庙']:
+            if time_of_day < 9 or time_of_day > 17:
+                adjusted_duration *= 0.8  # 非正常开放时间
+        
+        return round(max(adjusted_duration, 15))  # 至少15分钟
+    
+    def _calculate_transport_cost(self, distance_km: float, transport_mode: str) -> int:
+        """
+        计算交通费用
         
         Args:
             distance_km: 距离（公里）
             transport_mode: 交通方式
             
         Returns:
-            估算时间（分钟）
+            费用（元）
         """
-        # 不同交通方式的平均速度（km/h）
-        speed_map = {
-            'driving': 30,
-            'walking': 5,
-            'cycling': 15,
-            'transit': 25
+        # 基础费用
+        base_costs = {
+            'walking': 0,
+            'cycling': 0,
+            'driving': 10,    # 停车费
+            'transit': 3      # 地铁/公交起步价
         }
         
-        speed = speed_map.get(transport_mode, 30)
-        time_hours = distance_km / speed
-        return round(time_hours * 60)  # 转换为分钟
+        # 距离费用（元/公里）
+        distance_costs = {
+            'walking': 0,
+            'cycling': 0,
+            'driving': 2,     # 油费
+            'transit': 0.5    # 按距离计费
+        }
+        
+        base_cost = base_costs.get(transport_mode, 0)
+        distance_cost = distance_costs.get(transport_mode, 0) * distance_km
+        
+        return round(base_cost + distance_cost)

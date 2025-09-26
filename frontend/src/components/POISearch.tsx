@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { addSelectedPOI, removeSelectedPOI } from '../store/slices/mapSlice';
 import { POI } from '../types';
+import { getAllPOIs, searchPOIs } from '../data/hotspots';
 
 const { Search } = Input;
 
@@ -23,64 +24,8 @@ const POISearch: React.FC<POISearchProps> = ({ onPOISelect }) => {
   const [loading, setLoading] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
 
-  // 模拟POI数据库搜索
-  const mockPOIDatabase: POI[] = [
-    {
-      id: 'poi_1',
-      name: '故宫博物院',
-      coordinates: { lat: 39.9163, lng: 116.3972 },
-      address: '北京市东城区景山前街4号',
-      category: '博物馆',
-      description: '明清两朝的皇家宫殿，现为世界文化遗产',
-      suggestedDuration: 180,
-      openHours: '08:30-17:00',
-      isCustom: false,
-    },
-    {
-      id: 'poi_2',
-      name: '天坛公园',
-      coordinates: { lat: 39.8828, lng: 116.4067 },
-      address: '北京市东城区天坛路甲1号',
-      category: '公园',
-      description: '明清皇帝祭天的场所',
-      suggestedDuration: 120,
-      openHours: '06:00-22:00',
-      isCustom: false,
-    },
-    {
-      id: 'poi_3',
-      name: '颐和园',
-      coordinates: { lat: 39.9998, lng: 116.2754 },
-      address: '北京市海淀区新建宫门路19号',
-      category: '公园',
-      description: '中国古典园林之首',
-      suggestedDuration: 240,
-      openHours: '06:30-18:00',
-      isCustom: false,
-    },
-    {
-      id: 'poi_4',
-      name: '长城-八达岭段',
-      coordinates: { lat: 40.3584, lng: 116.0138 },
-      address: '北京市延庆区八达岭镇',
-      category: '历史遗迹',
-      description: '万里长城最著名的段落',
-      suggestedDuration: 300,
-      openHours: '07:00-18:00',
-      isCustom: false,
-    },
-    {
-      id: 'poi_5',
-      name: '南锣鼓巷',
-      coordinates: { lat: 39.9368, lng: 116.4034 },
-      address: '北京市东城区南锣鼓巷',
-      category: '商业街',
-      description: '北京最古老的街区之一',
-      suggestedDuration: 90,
-      openHours: '全天开放',
-      isCustom: false,
-    },
-  ];
+  // 使用系统景点数据库（包含热门景点和扩展景点），禁止自定义景点
+  const systemPOIDatabase: POI[] = getAllPOIs();
 
   /**
    * 搜索POI
@@ -98,12 +43,8 @@ const POISearch: React.FC<POISearchProps> = ({ onPOISelect }) => {
       // 模拟API调用延迟
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // 模拟搜索逻辑
-      const results = mockPOIDatabase.filter(poi =>
-        poi.name.toLowerCase().includes(keyword.toLowerCase()) ||
-        (poi.address && poi.address.toLowerCase().includes(keyword.toLowerCase())) ||
-        (poi.category && poi.category.toLowerCase().includes(keyword.toLowerCase()))
-      );
+      // 使用专门的搜索函数搜索景点
+      const results = searchPOIs(keyword);
       
       setSearchResults(results);
     } catch (error) {

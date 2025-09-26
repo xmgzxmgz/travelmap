@@ -4,7 +4,7 @@
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
 
 from database import db
@@ -314,6 +314,13 @@ def plan_trip(trip_id):
         if not trip:
             return jsonify({'error': '行程不存在'}), 404
         
+        # 获取请求参数
+        data = request.get_json() or {}
+        transport_mode = data.get('transportMode', 'driving')
+        daily_time_limit = data.get('dailyTimeLimit', 480)  # 默认8小时
+        start_time = data.get('startTime', '09:00')
+        is_weekend = data.get('isWeekend', False)
+        
         # 获取行程的所有POI
         pois = POI.query.filter_by(trip_id=trip_id).all()
         
@@ -339,7 +346,10 @@ def plan_trip(trip_id):
         optimization_result = optimizer.optimize_trip(
             pois=poi_data,
             num_days=trip.total_days,
-            daily_time_limit=480  # 8小时
+            daily_time_limit=daily_time_limit,
+            transport_mode=transport_mode,
+            start_time=start_time,
+            is_weekend=is_weekend
         )
         
         if not optimization_result['success']:

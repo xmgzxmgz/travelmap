@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Button, Typography, Timeline, Tag, Divider } from 'antd';
+import { Row, Col, Card, Button, Typography, Timeline, Tag, Divider, message } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, ShareAltOutlined, EditOutlined, ExportOutlined } from '@ant-design/icons';
 import MapComponent from '../components/MapComponent';
 import RouteExport from '../components/RouteExport';
-import { POI } from '../types';
+import { POI, RouteInfo, TransportMode } from '../types';
+import { calculateRoute } from '../services/routeService';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -16,10 +17,64 @@ const Results: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [exportVisible, setExportVisible] = useState(false);
+  const [routes, setRoutes] = useState<RouteInfo[]>([]);
+  const [isCalculatingRoutes, setIsCalculatingRoutes] = useState(false);
   
   // 从导航状态中获取数据
   const { selectedPOIs = [], planningData = {} } = location.state || {};
   const { totalDays = 1, transportMode = 'walking', startTime = '09:00' } = planningData;
+
+  /**
+   * 计算所有路线段
+   */
+  useEffect(() => {
+    const calculateAllRoutes = async () => {
+      if (selectedPOIs.length < 2) return;
+      
+      setIsCalculatingRoutes(true);
+      const calculatedRoutes: RouteInfo[] = [];
+      
+      try {
+        // 转换交通方式字符串为枚举
+        const getTransportModeEnum = (mode: string): TransportMode => {
+          switch (mode) {
+            case 'walking':
+              return TransportMode.WALKING;
+            case 'driving':
+              return TransportMode.DRIVING;
+            case 'transit':
+              return TransportMode.TRANSIT;
+            case 'cycling':
+              return TransportMode.CYCLING;
+            default:
+              return TransportMode.WALKING;
+          }
+        };
+        
+        const transportModeEnum = getTransportModeEnum(transportMode);
+        const startHour = parseInt(startTime.split(':')[0]);
+        
+        // 计算相邻POI之间的路线
+        for (let i = 0; i < selectedPOIs.length - 1; i++) {
+          const fromPOI = selectedPOIs[i];
+          const toPOI = selectedPOIs[i + 1];
+          
+          const route = await calculateRoute(fromPOI, toPOI, transportModeEnum, startHour);
+          calculatedRoutes.push(route);
+        }
+        
+        setRoutes(calculatedRoutes);
+        message.success('路线计算完成');
+      } catch (error) {
+        console.error('路线计算失败:', error);
+        message.error('路线计算失败，请重试');
+      } finally {
+        setIsCalculatingRoutes(false);
+      }
+    };
+    
+    calculateAllRoutes();
+  }, [selectedPOIs, transportMode, startTime]);
 
   /**
    * 返回规划页面
@@ -195,6 +250,7 @@ const Results: React.FC = () => {
         onClose={() => setExportVisible(false)}
         selectedPOIs={selectedPOIs}
         planningData={planningData}
+        routes={routes}
       />
     </div>
   );

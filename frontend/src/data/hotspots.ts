@@ -1,4 +1,5 @@
 import { POI } from '../types';
+import { allExtendedPOIs, getPOIsByCity, getAllCities } from './extendedPOIs';
 
 /**
  * 热度排名前50的景点数据
@@ -492,3 +493,56 @@ export const getHotspotsByRegion = (region: string): POI[] => {
   const regionPOIs = regionMap[region] || [];
   return hotspotPOIs.filter(poi => regionPOIs.includes(poi.name));
 };
+
+/**
+ * 获取所有景点数据（包含热门景点和扩展景点）
+ */
+export const getAllPOIs = (): POI[] => {
+  return [...hotspotPOIs, ...allExtendedPOIs];
+};
+
+/**
+ * 根据城市获取所有景点（包含热门景点和扩展景点）
+ */
+export const getAllPOIsByCity = (city: string): POI[] => {
+  // 先获取热门景点中该城市的景点
+  const hotspots = getHotspotsByRegion(city);
+  // 再获取扩展景点中该城市的景点
+  const extended = getPOIsByCity(city);
+  return [...hotspots, ...extended];
+};
+
+/**
+ * 搜索景点（按名称、地址、描述）
+ */
+export const searchPOIs = (keyword: string): POI[] => {
+  const allPOIs = getAllPOIs();
+  const lowerKeyword = keyword.toLowerCase();
+  
+  return allPOIs.filter(poi => 
+    poi.name.toLowerCase().includes(lowerKeyword) ||
+    poi.address?.toLowerCase().includes(lowerKeyword) ||
+    poi.description?.toLowerCase().includes(lowerKeyword) ||
+    poi.category?.toLowerCase().includes(lowerKeyword)
+  );
+};
+
+/**
+ * 按类别获取景点
+ */
+export const getPOIsByCategory = (category: string): POI[] => {
+  const allPOIs = getAllPOIs();
+  return allPOIs.filter(poi => poi.category === category);
+};
+
+/**
+ * 获取所有景点类别
+ */
+export const getAllCategories = (): string[] => {
+  const allPOIs = getAllPOIs();
+  const categories = new Set(allPOIs.map(poi => poi.category).filter((category): category is string => Boolean(category)));
+  return Array.from(categories);
+};
+
+// 导出扩展数据相关函数
+export { getPOIsByCity, getAllCities } from './extendedPOIs';

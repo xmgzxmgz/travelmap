@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Card, 
   Button, 
   Form, 
@@ -20,6 +20,7 @@ import {
 import { CalendarOutlined, ClockCircleOutlined, UserOutlined, CarOutlined, GroupOutlined } from '@ant-design/icons';
 import MapComponent from '../components/MapComponent';
 import POISearch from '../components/POISearch';
+import CityPOISelector from '../components/CityPOISelector';
 import { RootState } from '../store';
 import { startPlanning, updatePlanningProgress } from '../store/slices/tripSlice';
 import { POI, TransportMode } from '../types';
@@ -244,10 +245,17 @@ const Plan: React.FC = () => {
               </Card>
             )}
 
-            {/* POI搜索 - 仅在景点规划模式显示 */}
+            {/* POI搜索和城市选择 - 仅在景点规划模式显示 */}
             {!routePlanningMode && (
-              <Card title="景点搜索" size="small">
-                <POISearch />
+              <Card title="景点选择" size="small">
+                <Tabs defaultActiveKey="search" size="small">
+                  <TabPane tab="搜索景点" key="search">
+                    <POISearch onPOISelect={handlePOIClick} />
+                  </TabPane>
+                  <TabPane tab="按城市选择" key="city">
+                    <CityPOISelector onPOISelect={handlePOIClick} />
+                  </TabPane>
+                </Tabs>
               </Card>
             )}
 

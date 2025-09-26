@@ -4,8 +4,9 @@ import { useSelector, useDispatch } from 'react-redux';
 import L from 'leaflet';
 import { RootState } from '../store';
 import { setMapView, addCustomPOI, addSelectedPOI, removeSelectedPOI } from '../store/slices/mapSlice';
-import { POI, Coordinates } from '../types';
-import { hotspotPOIs, getHotspotsByRank } from '../data/hotspots';
+import { POI, Coordinates, RouteInfo, TransportMode } from '../types';
+import { getAllPOIs, getHotspotsByRank } from '../data/hotspots';
+import { calculateRoute } from '../services/routeService';
 import { Button, Tag, message } from 'antd';
 import { EnvironmentOutlined, StarOutlined, DollarOutlined } from '@ant-design/icons';
 
@@ -52,6 +53,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [hotspots, setHotspots] = useState<POI[]>([]);
   const [origin, setOrigin] = useState<POI | null>(null);
   const [destination, setDestination] = useState<POI | null>(null);
+  const [isSelectingOrigin, setIsSelectingOrigin] = useState(true);
+  const [calculatedRoutes, setCalculatedRoutes] = useState<RouteInfo[]>([]);
+  const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
 
   // 加载热门景点数据
   useEffect(() => {
@@ -61,17 +65,26 @@ const MapComponent: React.FC<MapComponentProps> = ({
     }
   }, [showHotspots]);
 
-  // 处理地图点击事件，添加自定义POI
+  // 处理地图点击事件 - 禁用自定义选点功能
   const handleMapClick = (coords: Coordinates) => {
-    const customPOI: POI = {
-      id: `custom_${Date.now()}`,
-      name: '自定义地点',
-      coordinates: coords,
-      isCustom: true,
-      customDuration: 60, // 默认1小时
-    };
-    
-    dispatch(addCustomPOI(customPOI));
+    // 完全禁用自定义选点功能，防止误操作
+    message.warning('请点击地图上的景点标记来选择景点，不支持自定义地点');
+    return;
+  };
+
+  // 计算真实路线
+  const calculateRealRoute = async (fromPOI: POI, toPOI: POI) => {
+    setIsCalculatingRoute(true);
+    try {
+      const route = await calculateRoute(fromPOI, toPOI, TransportMode.DRIVING);
+      setCalculatedRoutes([route]);
+      message.success('路线计算完成');
+    } catch (error) {
+      message.error('路线计算失败');
+      console.error('Route calculation error:', error);
+    } finally {
+      setIsCalculatingRoute(false);
+    }
   };
 
   // 处理热门景点点击
@@ -83,6 +96,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
       } else if (!destination && poi.id !== origin.id) {
         setDestination({ ...poi, isDestination: true });
         message.success(`已设置 ${poi.name} 为目的地`);
+        // 自动计算路线
+        calculateRealRoute(origin, poi);
       } else {
         message.warning('请先清除当前选择再重新设置');
       }
@@ -97,6 +112,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const clearOriginDestination = () => {
     setOrigin(null);
     setDestination(null);
+    setCalculatedRoutes([]);
+    setIsSelectingOrigin(true);
     message.info('已清除出发地和目的地选择');
   };
 
@@ -249,13 +266,34 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const renderOriginDestinationRoute = () => {
     if (!origin || !destination) return null;
     
+    // 如果有计算的路线，使用真实路线
+    if (calculatedRoutes.length > 0) {
+      return calculatedRoutes.map((route, index) => {
+        if (route.waypoints && route.waypoints.length > 0) {
+          const positions: [number, number][] = route.waypoints.map(point => [point.lat, point.lng]);
+          
+          return (
+            <Polyline
+              key={`calculated-route-${index}`}
+              positions={positions}
+              color="#1890ff"
+              weight={4}
+              opacity={0.8}
+            />
+          );
+        }
+        return null;
+      });
+    }
+    
+    // 如果正在计算路线，显示虚线预览
     return (
       <Polyline
         positions={[
           [origin.coordinates.lat, origin.coordinates.lng],
           [destination.coordinates.lat, destination.coordinates.lng]
         ]}
-        color="#1890ff"
+        color={isCalculatingRoute ? "#faad14" : "#1890ff"}
         weight={3}
         opacity={0.7}
         dashArray="10, 5"
@@ -285,6 +323,22 @@ const MapComponent: React.FC<MapComponentProps> = ({
           <div style={{ marginBottom: '8px' }}>
             目的地: {destination ? destination.name : '请在地图上选择'}
           </div>
+          
+          {/* 路线信息显示 */}
+          {isCalculatingRoute && (
+            <div style={{ marginBottom: '8px', color: '#faad14' }}>
+              正在计算路线...
+            </div>
+          )}
+          
+          {calculatedRoutes.length > 0 && calculatedRoutes[0] && (
+            <div style={{ marginBottom: '8px', fontSize: '12px' }}>
+              <div>距离: {(calculatedRoutes[0].distance / 1000).toFixed(1)} 公里</div>
+              <div>时间: {calculatedRoutes[0].duration} 分钟</div>
+              <div>费用: ¥{calculatedRoutes[0].cost}</div>
+            </div>
+          )}
+          
           <Button size="small" onClick={clearOriginDestination}>
             清除选择
           </Button>
@@ -305,8 +359,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         
-        {/* 地图点击事件处理 */}
-        <MapClickHandler onMapClick={handleMapClick} />
+        {/* 已禁用地图点击处理器，防止自定义选点 */}
         
         {/* 渲染热门景点 */}
         {showHotspots && hotspots.map((poi) => (
